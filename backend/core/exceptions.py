@@ -8,6 +8,14 @@ class ConflictException(APIException):
     default_detail = 'Conflict with the current state of the resource.'
     default_code = 'conflict'
 
+    def __init__(self, detail=None, code=None, message=None):
+        actual_detail = message if message is not None else detail
+        if actual_detail is None:
+            actual_detail = self.default_detail
+        if code is not None:
+            self.default_code = code
+        super().__init__(detail=actual_detail, code=code or self.default_code)
+
 
 def custom_exception_handler(exc, context):
     """

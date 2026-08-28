@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
 
 
 class User(AbstractUser):
@@ -60,6 +61,21 @@ class Session(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.starts_at})"
+
+    @property
+    def active_booking_count(self):
+        """Live count of active bookings. Never cached."""
+        return self.bookings.filter(status=Booking.STATUS_ACTIVE).count()
+
+    @property
+    def remaining_seats(self):
+        """Display-only derived remaining seats."""
+        return max(0, self.capacity - self.active_booking_count)
+
+    @property
+    def is_started(self):
+        """Display helper indicating if start time has passed."""
+        return self.starts_at <= timezone.now()
 
 
 class Booking(models.Model):

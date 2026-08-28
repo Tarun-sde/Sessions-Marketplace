@@ -51,18 +51,22 @@ class GoogleAuthSerializer(serializers.Serializer):
 
 class SessionSerializer(serializers.ModelSerializer):
     """
-    Serializer for Session creation and inspection with robust validation.
+    Serializer for Session catalog and detail representations, creation, and updates.
     """
     creator = UserSerializer(read_only=True)
+    remaining_seats = serializers.IntegerField(read_only=True)
+    active_booking_count = serializers.IntegerField(read_only=True)
+    is_started = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Session
         fields = [
             'id', 'creator', 'title', 'description',
             'starts_at', 'capacity', 'location',
+            'remaining_seats', 'active_booking_count', 'is_started',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'creator', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'creator', 'remaining_seats', 'active_booking_count', 'is_started', 'created_at', 'updated_at']
 
     def validate_capacity(self, value):
         if value < 1:
@@ -72,20 +76,52 @@ class SessionSerializer(serializers.ModelSerializer):
         return value
 
     def validate_starts_at(self, value):
-        # On creation (or when changing starts_at), starts_at must be in the future
+        # On creation (or when changing starts_at on update), starts_at must be in the future
         if not self.instance or (self.instance and self.instance.starts_at != value):
             if value <= timezone.now():
                 raise serializers.ValidationError("Session start time must be in the future.")
         return value
 
 
+class BookingCreateSerializer(serializers.Serializer):
+    """
+    Input serializer for POST /api/bookings/.
+    """
+    session_id = serializers.IntegerField(required=True)
+
+
 class BookingSerializer(serializers.ModelSerializer):
     """
-    Serializer for Booking representation.
+    Representation of a Booking record with basic session context.
+    """
+    user = UserSerializer(read_only=True)
+    session_id = serializers.IntegerField(source='session.id', read_only=True)
+
+    class Meta:
+        model = Booking
+        fields = ['id', 'user', 'session_id', 'status', 'created_at']
+        read_only_fields = ['id', 'user', 'session_id', 'status', 'created_at']
+
+
+class UserBookingItemSerializer(serializers.ModelSerializer):
+    """
+    Detailed booking serializer for user's own booking lists (/api/bookings/mine/).
+    """
+    session = SessionSerializer(read_only=True)
+
+    class Meta:
+        model = Booking
+        fields = ['id', 'session', 'status', 'created_at']
+        read_only_fields = ['id', 'session', 'status', 'created_at']
+
+
+class CreatorBookingItemSerializer(serializers.ModelSerializer):
+    """
+    Booking serializer for Creator session booking lists (/api/sessions/{id}/bookings/).
     """
     user = UserSerializer(read_only=True)
 
     class Meta:
         model = Booking
-        fields = ['id', 'user', 'session', 'status', 'created_at']
-        read_only_fields = ['id', 'user', 'created_at']
+        fields = ['id', 'user', 'status', 'created_at']
+        read_only_fields = ['id', 'user', 'status', 'created_at']
