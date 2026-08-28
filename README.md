@@ -187,4 +187,11 @@ The core engineering mandate of this assignment is provable capacity safety unde
 ## 9. Known Limitations
 
 1. **Live Google Cloud OAuth**: Requires an external `GOOGLE_CLIENT_ID` provisioned in Google Cloud Console. When not configured, the application seamlessly uses the verified development authentication escape hatch (`devtoken:<email>`).
-2. **Browser Playwright Automation**: The host environment's Playwright binary installer encountered an upstream CDN mirror 404 on Windows. Complete end-to-end user workflows were verified via deterministic live HTTP integration tests against Nginx on `http://localhost/`.
+
+2. **Browser Playwright Automation**: The Antigravity browser subagent could not initialize its browser driver because its driver package fetch failed against an upstream Microsoft Azure CDN mirror on Windows. The application itself was manually smoke-tested by the user, and complete backend/API workflows were verified through Nginx.
+
+3. **PostgreSQL Host Port Exposure**: Docker Compose exposes PostgreSQL on host port `5432` for local development and verification. In a production deployment, the database would normally remain accessible only within the container/network and would not need to be exposed directly to the host.
+
+4. **Development Volume Mount**: Docker Compose mounts `./backend:/app` into the backend container to support the development workflow and live code changes. The production-oriented image configuration could instead use a fully self-contained application image without the source-code volume mount.
+
+5. **Dependency Version Ranges**: Python dependencies in `requirements.txt` use minimum-version constraints (`>=`) rather than exact version pins. Exact dependency locking would provide stronger reproducibility for long-term or production deployments.
