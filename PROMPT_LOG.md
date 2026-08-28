@@ -43,6 +43,26 @@ This log documents AI interactions, model responses, supervision, rejections/mod
 
 ---
 
+### [Phase 3] Sessions, Authorization & Concurrency-Safe Booking
+
+- **Model / Tool**: Antigravity (Gemini 3.7 Flash) / IDE Pair Programmer
+- **Prompt**: "Implement ONLY Phase 3 — Sessions, Authorization & Concurrency-Safe Booking. Implement Session CRUD (`/api/sessions/`, `/api/sessions/<id>/`), creator permissions (`IsCreator`, `IsSessionOwnerOrReadOnly`), creator booking counts (`/api/sessions/<id>/bookings/`), transactional booking endpoint (`/api/bookings/`) with PostgreSQL `select_for_update` row locking and live count verification, `/api/bookings/mine/` with read-time active/past partitioning, serialized booking cancellation (`/api/bookings/<id>/`), multi-threaded PostgreSQL concurrency race test with 10 threads, and full authorization edge case test suite."
+- **What was used**:
+  - `IsCreator` and `IsSessionOwnerOrReadOnly` permissions for server-side authorization.
+  - Atomic `select_for_update()` transaction locking in `POST /api/bookings/` and `DELETE /api/bookings/<id>/`.
+  - Multi-threaded `TransactionTestCase` using `threading.Barrier` for 10-thread simultaneous race condition verification.
+  - Read-time partition calculation for `/api/bookings/mine/`.
+- **What was changed / rejected**:
+  - Rejected caching or pre-calculating booking counts before acquiring the row lock; the count is strictly queried live *inside* the locked transaction.
+  - Rejected denormalized seat counters (`seats_remaining` column) to eliminate count drift bugs.
+  - Rejected Phase 4 frontend features (Creator Dashboard UI, Booking UI, Catalog UI) to strictly respect Phase 3 boundaries.
+- **How it was verified**:
+  - Executed full test suite: 48/48 tests passed in 1.77s.
+  - Executed 10-thread PostgreSQL concurrency test (`test_booking_concurrency`) 3 consecutive times with 100% stability (exactly 1 success, 9 `SESSION_FULL` rejections, exactly 1 active DB booking).
+  - Verified live HTTP booking collision and cancellation/re-booking flows via Nginx and curl/PowerShell.
+
+---
+
 ### What AI Got Wrong / What Was Corrected
 
 1. **Implicit Dependency Assumption (`requests` package missing from `google-auth`)**:

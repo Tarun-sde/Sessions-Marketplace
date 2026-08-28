@@ -58,3 +58,37 @@ This document records non-trivial technical and architectural decisions made dur
   3. PostgreSQL partial unique constraint: `UNIQUE(user_id, session_id) WHERE status = 'active'`.
 - **Choice Made**: Option 3. PostgreSQL partial unique index via Django's `UniqueConstraint(fields=['user', 'session'], condition=Q(status='active'))`.
 - **Trade-offs**: Option 1 incorrectly prevents a user from re-booking after cancellation. Option 2 is vulnerable to concurrent race conditions and application logic bypasses. Option 3 guarantees database-level invariant enforcement without blocking valid lifecycle state transitions.
+
+---
+
+### Decision 6: Concurrency-Safe Capacity Enforcement via PostgreSQL Row-Level Lock (`select_for_update`) + Live Aggregate Count
+
+- **Problem / Ambiguity**: When multiple users simultaneously attempt to book the final available seat on a session, frontend checks or non-atomic application checks suffer from race conditions leading to oversold sessions.
+- **Options Considered**:
+  1. Rely on frontend-rendered `remaining_seats` to disable booking buttons.
+  2. Denormalized counter column on `Session` (`seats_remaining`) decremented via `F('seats_remaining') - 1` with a check constraint.
+  3. PostgreSQL row-level locking (`Session.objects.select_for_update().get(id=session_id)`) inside `transaction.atomic()`, followed by a fresh live count of `Booking.objects.filter(session=session, status='active').count()`.
+- **Choice Made**: Option 3. Row-level lock serializes competing transactions on the parent Session row; fresh count inside the lock eliminates count drift.
+- **Trade-offs**: Option 1 offers 0 race condition protection (renders stale immediately). Option 2 risks silent counter drift if records are modified outside a single ORM path. Option 3 incurs one extra indexed `COUNT()` query per booking attempt in exchange for 100% provable consistency under high contention.
+
+---
+
+### Decision 7: Serialized Booking Cancellation with Parent Session Row Locking
+
+- **Problem / Ambiguity**: If User A cancels a booking at the exact same millisecond that User B attempts to book a full session, an unsynchronized cancellation could interleave with the booking count check and cause race anomalies or deadlocks.
+- **Options Considered**:
+  1. Execute a simple `Booking.objects.filter(id=pk).update(status='cancelled')` without locking the parent session.
+  2. Acquire a `select_for_update()` lock on the parent `Session` inside the cancellation transaction before flipping `status = 'cancelled'`.
+- **Choice Made**: Option 2. Lock the parent `Session` during cancellation.
+- **Trade-offs**: Slightly increased lock coordination during cancellation in exchange for strictly serialized interleaving between seat releases and new booking claims.
+
+---
+
+### Decision 8: Read-Time Partitioning of Active vs. Past User Bookings
+
+- **Problem / Ambiguity**: Bookings naturally transition from "active" to "past" as real time passes beyond `session.starts_at`. How to present this split to users in `/api/bookings/mine/`.
+- **Options Considered**:
+  1. A background cron worker / celery beat task running every minute to flip database status columns from `'active'` to `'past'`.
+  2. Compute the active vs. past partition at read time based on `booking.session.starts_at <= timezone.now()`.
+- **Choice Made**: Option 2. Dynamically partition at read time.
+- **Trade-offs**: Avoids adding an asynchronous worker, message broker, and cron infrastructure to the stack, eliminating a significant operational failure mode while guaranteeing real-time accuracy down to the second.
