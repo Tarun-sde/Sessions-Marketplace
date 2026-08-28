@@ -39,6 +39,10 @@ services:
       dockerfile: Dockerfile
     container_name: ahoum_frontend
     restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-${VITE_GOOGLE_CLIENT_ID:-}}
     volumes:
       - ./frontend:/app
       - /app/node_modules
