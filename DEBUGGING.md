@@ -27,3 +27,13 @@ This log documents real technical issues, failed assumptions, and bugs encounter
 - **Root Cause**: Legacy Docker Compose v2 template included top-level `version`.
 - **Fix**: Removed `version: '3.8'` from `docker-compose.yml` to conform to current Docker Compose specification.
 - **Verification**: Re-ran compose parser with clean syntax validation.
+
+---
+
+### Incident 3: Missing `requests` Transport Dependency in `google-auth`
+
+- **Symptom**: When loading `core.urls` and running `makemigrations`, Python threw `ImportError: The requests library is not installed from please install the requests package to use the requests transport.` originating from `from google.auth.transport import requests`.
+- **Diagnosis**: The `google-auth` base package provides transport abstraction modules (`google.auth.transport.requests`, `google.auth.transport.grpc`), but does not list `requests` as a hard mandatory sub-dependency in its base package distribution.
+- **Root Cause**: `backend/requirements.txt` included `google-auth>=2.28.1` without explicitly declaring `requests>=2.31.0`.
+- **Fix**: Added `requests>=2.31.0` to `backend/requirements.txt` and rebuilt the container with `docker compose up --build -d backend`.
+- **Verification**: Rebuilt backend image, executed `python manage.py check` (0 errors), and all Google OAuth verification tests passed without transport import failures.

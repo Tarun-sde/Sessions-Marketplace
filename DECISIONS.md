@@ -32,5 +32,29 @@ This document records non-trivial technical and architectural decisions made dur
 - **Options Considered**:
   1. Bind-mount a host folder (`./postgres_data`).
   2. Use a Docker named volume (`ahoum_postgres_data`).
+  3. Ephemeral container storage without persistence.
 - **Choice Made**: Option 2. Named volume mapped to `/var/lib/postgresql/data`.
 - **Trade-offs**: Avoids host filesystem permission and OS-specific file locking inconsistencies (especially across Windows/Linux Docker environments) while guaranteeing data survives container restarts.
+
+---
+
+### Decision 4: Stateless Google OAuth ID Token Verification with Development Auth Gating
+
+- **Problem / Ambiguity**: How to authenticate users securely via OAuth without requiring server-side client secrets or fragile redirect loops, while allowing evaluators and automated test suites to run without hard dependencies on live third-party cloud credentials.
+- **Options Considered**:
+  1. Authorization Code Flow with backend client secret exchange.
+  2. Frontend Google credential retrieval followed by backend ID token cryptographic verification (`google-auth` library) keyed on `(oauth_provider='google', oauth_sub=claims['sub'])`, augmented with a development token escape hatch (`devtoken:<email>`) strictly gated behind `AUTH_DEV_MODE=True` and `DEBUG=True`.
+- **Choice Made**: Option 2. Cryptographic verification of Google ID token claims as the primary source of identity, with dual-condition development gating.
+- **Trade-offs**: Simplifies client-side OAuth integration and guarantees immutable user lookup by stable Google `sub` claim. The development escape hatch provides 100% testability without committing live OAuth secrets, while `AUTH_DEV_MODE` and `DEBUG` guardrails prevent accidental activation in production.
+
+---
+
+### Decision 5: Partial Unique Index for Active Booking Uniqueness
+
+- **Problem / Ambiguity**: A user may only hold at most one active booking for any given session, but should be permitted to cancel a booking and subsequently book the session again if seats remain available.
+- **Options Considered**:
+  1. Global unique constraint on `(user_id, session_id)` in the `Booking` table.
+  2. Application-layer existence check (`Booking.objects.filter(user=..., session=..., status='active').exists()`).
+  3. PostgreSQL partial unique constraint: `UNIQUE(user_id, session_id) WHERE status = 'active'`.
+- **Choice Made**: Option 3. PostgreSQL partial unique index via Django's `UniqueConstraint(fields=['user', 'session'], condition=Q(status='active'))`.
+- **Trade-offs**: Option 1 incorrectly prevents a user from re-booking after cancellation. Option 2 is vulnerable to concurrent race conditions and application logic bypasses. Option 3 guarantees database-level invariant enforcement without blocking valid lifecycle state transitions.
