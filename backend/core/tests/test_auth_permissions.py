@@ -155,8 +155,19 @@ class AuthAndProfileAPITestCase(TestCase):
         self.assertEqual(final_count, 1)
 
     @override_settings(AUTH_DEV_MODE=False, DEBUG=True)
-    def test_dev_authentication_rejected_when_disabled(self):
-        """When AUTH_DEV_MODE=False, devtoken:<email> is rejected with 401."""
+    def test_dev_authentication_rejected_when_auth_dev_mode_false(self):
+        """When AUTH_DEV_MODE=False (even if DEBUG=True), devtoken:<email> is rejected with 401."""
+        response = self.client.post(
+            reverse('google_auth'),
+            {'id_token': 'devtoken:devuser@ahoum.com'},
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.data['error']['code'], 'dev_auth_disabled')
+
+    @override_settings(AUTH_DEV_MODE=True, DEBUG=False)
+    def test_dev_authentication_rejected_when_debug_false(self):
+        """When DEBUG=False (production mode), devtoken:<email> is strictly rejected with 401."""
         response = self.client.post(
             reverse('google_auth'),
             {'id_token': 'devtoken:devuser@ahoum.com'},

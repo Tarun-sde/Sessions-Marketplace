@@ -32,15 +32,36 @@ class ModelConstraintTestCase(TransactionTestCase):
             location='Online'
         )
 
-    def test_session_capacity_check_constraint(self):
-        """Database rejects session capacity < 1 at DB layer."""
+    def test_session_capacity_check_constraint_zero(self):
+        """Database rejects session capacity = 0 at DB layer."""
         with self.assertRaises(IntegrityError):
             Session.objects.create(
                 creator=self.creator,
-                title='Invalid Capacity Session',
+                title='Zero Capacity Session',
                 starts_at=timezone.now() + timedelta(days=1),
                 capacity=0
             )
+
+    def test_session_capacity_check_constraint_negative(self):
+        """Database rejects session capacity = -1 at DB layer."""
+        with self.assertRaises(IntegrityError):
+            Session.objects.create(
+                creator=self.creator,
+                title='Negative Capacity Session',
+                starts_at=timezone.now() + timedelta(days=1),
+                capacity=-1
+            )
+
+    def test_session_capacity_valid_positive(self):
+        """Database accepts session capacity = 1."""
+        valid_session = Session.objects.create(
+            creator=self.creator,
+            title='Valid 1-Capacity Session',
+            starts_at=timezone.now() + timedelta(days=1),
+            capacity=1
+        )
+        self.assertIsNotNone(valid_session.id)
+        self.assertEqual(valid_session.capacity, 1)
 
     def test_booking_active_partial_unique_constraint(self):
         """A user cannot hold two active bookings for the same session."""
@@ -81,6 +102,22 @@ class ModelConstraintTestCase(TransactionTestCase):
         self.assertIsNotNone(b2.id)
         self.assertNotEqual(b1.id, b2.id)
 
+    def test_multiple_cancelled_bookings_allowed(self):
+        """A user can hold multiple historical cancelled bookings for the same session."""
+        b1 = Booking.objects.create(
+            user=self.user,
+            session=self.session,
+            status=Booking.STATUS_CANCELLED
+        )
+        b2 = Booking.objects.create(
+            user=self.user,
+            session=self.session,
+            status=Booking.STATUS_CANCELLED
+        )
+        self.assertIsNotNone(b1.id)
+        self.assertIsNotNone(b2.id)
+        self.assertNotEqual(b1.id, b2.id)
+
 
 class SessionSerializerValidationTestCase(TestCase):
     """
@@ -94,11 +131,21 @@ class SessionSerializerValidationTestCase(TestCase):
             is_creator=True
         )
 
-    def test_serializer_capacity_minimum(self):
+    def test_serializer_capacity_minimum_zero(self):
         data = {
             'title': 'Test Session',
             'starts_at': timezone.now() + timedelta(days=1),
             'capacity': 0
+        }
+        serializer = SessionSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('capacity', serializer.errors)
+
+    def test_serializer_capacity_negative(self):
+        data = {
+            'title': 'Test Session',
+            'starts_at': timezone.now() + timedelta(days=1),
+            'capacity': -5
         }
         serializer = SessionSerializer(data=data)
         self.assertFalse(serializer.is_valid())

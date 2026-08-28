@@ -48,6 +48,8 @@ class SessionAPITestCase(TestCase):
         client = APIClient()
         response = client.get(reverse('session_list_create'))
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn('error', response.data)
+        self.assertEqual(response.data['error']['code'], 'not_authenticated')
 
     def test_authenticated_user_can_list_sessions(self):
         client = APIClient()
@@ -92,6 +94,8 @@ class SessionAPITestCase(TestCase):
         }
         response = client.post(reverse('session_list_create'), payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('error', response.data)
+        self.assertEqual(response.data['error']['code'], 'permission_denied')
 
     def test_creator_can_update_own_session(self):
         client = APIClient()
@@ -157,6 +161,54 @@ class SessionAPITestCase(TestCase):
         response = client.get(reverse('session_bookings_list', args=[self.session_a.id]))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_creator_toggle_retains_existing_session_ownership(self):
+        """
+        When a creator disables creator mode (is_creator=False), they cannot create new sessions,
+        but they retain full ownership and update/delete permissions over previously created sessions.
+        """
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token_creator_a}')
+
+        # 1. Switch is_creator to False
+        patch_resp = client.patch(reverse('current_user_profile'), {'is_creator': False}, format='json')
+        self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(patch_resp.data['is_creator'])
+
+        # 2. User cannot create NEW sessions
+        new_session_payload = {
+            'title': 'Blocked Session Creation',
+            'starts_at': (timezone.now() + timedelta(days=2)).isoformat(),
+            'capacity': 5
+        }
+        create_resp = client.post(reverse('session_list_create'), new_session_payload, format='json')
+        self.assertEqual(create_resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 3. User still owns and can UPDATE existing session_a
+        update_resp = client.patch(
+            reverse('session_detail', args=[self.session_a.id]),
+            {'title': 'Still Owned By Creator A (Now Inactive)'},
+            format='json'
+        )
+        self.assertEqual(update_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_resp.data['title'], 'Still Owned By Creator A (Now Inactive)')
+
+        # 4. User still owns and can DELETE existing session_a
+        del_resp = client.delete(reverse('session_detail', args=[self.session_a.id]))
+        self.assertEqual(del_resp.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_session_delete_with_active_bookings_cascades_cleanly(self):
+        """Deleting an owned session cleanly deletes the session and cascades associated bookings."""
+        Booking.objects.create(user=self.regular_user, session=self.session_a, status='active')
+        self.assertEqual(Booking.objects.filter(session=self.session_a).count(), 1)
+
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token_creator_a}')
+        response = client.delete(reverse('session_detail', args=[self.session_a.id]))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        self.assertFalse(Session.objects.filter(id=self.session_a.id).exists())
+        self.assertEqual(Booking.objects.filter(session_id=self.session_a.id).count(), 0)
+
 
 class BookingAPITestCase(TestCase):
     """
@@ -187,12 +239,15 @@ class BookingAPITestCase(TestCase):
         client = APIClient()
         response = client.post(reverse('booking_create'), {'session_id': self.open_session.id}, format='json')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn('error', response.data)
 
     def test_booking_nonexistent_session_returns_404(self):
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token_a}')
         response = client.post(reverse('booking_create'), {'session_id': 99999}, format='json')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn('error', response.data)
+        self.assertEqual(response.data['error']['code'], 'session_not_found')
 
     def test_successful_booking(self):
         client = APIClient()
@@ -238,6 +293,20 @@ class BookingAPITestCase(TestCase):
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token_a}')
         response = client.post(reverse('booking_create'), {'session_id': started_session.id}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data['error']['code'], 'SESSION_ALREADY_STARTED')
+
+    def test_session_booking_exact_start_boundary_rejected(self):
+        """A session with starts_at <= timezone.now() is strictly rejected."""
+        exact_session = Session.objects.create(
+            creator=self.creator,
+            title='Exact Boundary Session',
+            starts_at=timezone.now() - timedelta(seconds=2),
+            capacity=5
+        )
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token_a}')
+        response = client.post(reverse('booking_create'), {'session_id': exact_session.id}, format='json')
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertEqual(response.data['error']['code'], 'SESSION_ALREADY_STARTED')
 
@@ -295,6 +364,7 @@ class BookingAPITestCase(TestCase):
         client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token_b}')
         response = client.delete(reverse('booking_cancel', args=[booking.id]))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('error', response.data)
         booking.refresh_from_db()
         self.assertEqual(booking.status, 'active')
 
