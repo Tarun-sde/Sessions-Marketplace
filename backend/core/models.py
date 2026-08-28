@@ -25,3 +25,81 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.email or self.username
+
+    @property
+    def display_name(self):
+        full = f"{self.first_name} {self.last_name}".strip()
+        return full or self.first_name or self.username or self.email
+
+
+class Session(models.Model):
+    """
+    Session offered by a Creator in the marketplace.
+    """
+    creator = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='created_sessions'
+    )
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
+    starts_at = models.DateTimeField()
+    capacity = models.PositiveIntegerField()
+    location = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['starts_at']
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(capacity__gte=1),
+                name='session_capacity_gte_1'
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.starts_at})"
+
+
+class Booking(models.Model):
+    """
+    Booking of a Session by a User.
+    Enforces at most ONE active booking per (user, session) pair via partial unique index.
+    """
+    STATUS_ACTIVE = 'active'
+    STATUS_CANCELLED = 'cancelled'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_CANCELLED, 'Cancelled'),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='bookings'
+    )
+    session = models.ForeignKey(
+        Session,
+        on_delete=models.CASCADE,
+        related_name='bookings'
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_ACTIVE
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'session'],
+                condition=models.Q(status='active'),
+                name='unique_active_user_session_booking'
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.user.email} -> {self.session.title} [{self.status}]"
