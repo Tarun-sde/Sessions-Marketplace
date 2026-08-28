@@ -63,6 +63,26 @@ This log documents AI interactions, model responses, supervision, rejections/mod
 
 ---
 
+### [Phase 4] Frontend Application & API Integration
+
+- **Model / Tool**: Antigravity (Gemini 3.7 Flash) / IDE Pair Programmer
+- **Prompt**: "Implement ONLY Phase 4 — Frontend Application & API Integration. Implement authentication UI (Google login + Dev login fallback), central AuthContext and API client with concurrency-safe JWT refresh handling, Session catalog, Session detail with real-time booking CTA and 409 conflict handling, My Bookings with Active and Past tabs & cancellation, Creator Dashboard with enrollment metrics and attendee list viewer modal, Create/Edit Session forms, Profile management with Creator Mode toggle, responsive layout with design tokens, and build verification."
+- **What was used**:
+  - React Router v6 with `ProtectedRoute` guards checking `isAuthenticated` and `is_creator`.
+  - Unified `client.js` with subscriber queue for mutex-controlled JWT token refresh.
+  - Modular pages: `Login`, `Sessions`, `SessionDetail`, `Bookings`, `CreatorDashboard`, `CreateSession`, `EditSession`, `Profile`.
+  - Clean vanilla CSS design system with design tokens (`index.css`), glassmorphism, responsive navigation drawer, and Lucide icons.
+- **What was changed / rejected**:
+  - Rejected optimistic UI updates for booking actions; enforced server-confirmed transitions to prevent race condition rollbacks.
+  - Rejected storing tokens in URL query params; strictly isolated tokens to storage and client headers.
+  - Rejected hardcoded API endpoints (`localhost:8000`), routing all requests through Nginx proxy `/api/`.
+- **How it was verified**:
+  - Ran `docker compose exec frontend npm run build` (built cleanly in 2.70s with 0 errors).
+  - Executed complete end-to-end integration test of all user and creator flows through Nginx.
+  - Re-verified all 48 backend tests and concurrency tests (`test_booking_concurrency`).
+
+---
+
 ### What AI Got Wrong / What Was Corrected
 
 1. **Implicit Dependency Assumption (`requests` package missing from `google-auth`)**:

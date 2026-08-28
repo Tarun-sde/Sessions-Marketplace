@@ -92,3 +92,25 @@ This document records non-trivial technical and architectural decisions made dur
   2. Compute the active vs. past partition at read time based on `booking.session.starts_at <= timezone.now()`.
 - **Choice Made**: Option 2. Dynamically partition at read time.
 - **Trade-offs**: Avoids adding an asynchronous worker, message broker, and cron infrastructure to the stack, eliminating a significant operational failure mode while guaranteeing real-time accuracy down to the second.
+
+---
+
+### Decision 9: Centralized API Client with Subscriber Queue for Coordinated JWT Refresh
+
+- **Problem / Ambiguity**: When a user's short-lived JWT access token expires while multiple asynchronous components fire API requests simultaneously, naive interceptors fire multiple concurrent `/api/auth/refresh/` requests or trigger infinite redirect loops.
+- **Options Considered**:
+  1. Catch 401 in individual page components and trigger full page reloads.
+  2. Interceptor with a boolean mutex (`isRefreshing`) and subscriber queue (`refreshSubscribers`) in `client.js`. While one refresh request is in flight, subsequent 401s subscribe to the pending refresh promise and replay automatically once the new access token arrives.
+- **Choice Made**: Option 2. Centralized client-level subscriber queue.
+- **Trade-offs**: Small amount of queue state management in exchange for zero duplicate refresh calls, seamless transparent request replay, and guaranteed prevention of 401 redirect loops.
+
+---
+
+### Decision 10: Server-Confirmed Booking State Interleaving over Optimistic Updates
+
+- **Problem / Ambiguity**: If the frontend optimistically marks a booking as "Confirmed" before the backend responds, high-contention scenarios (where another user claimed the last seat) result in jarring UI rollback and corrupted user expectations.
+- **Options Considered**:
+  1. Optimistically display "Booked" immediately upon button click, and revert if the server returns 409 `SESSION_FULL`.
+  2. Show a clean pending spinner on the button, wait for server confirmation, and on 409 conflict, immediately re-fetch the session detail to update remaining seats and display the specific collision error message.
+- **Choice Made**: Option 2. Server-confirmed state transitions with instant conflict-triggered re-sync.
+- **Trade-offs**: Eliminates ghost confirmations and ensures that the user interface never lies about seat acquisition under concurrency.

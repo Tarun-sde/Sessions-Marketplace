@@ -30,7 +30,7 @@ docker compose exec backend python manage.py test core.tests.test_booking_concur
 ## 2. Tech Stack
 
 - **Backend**: Django 5.x, Django REST Framework, PostgreSQL (`psycopg2-binary`), `djangorestframework-simplejwt`, `google-auth`, `requests`
-- **Frontend**: React 18, Vite, React Router, Lucide Icons
+- **Frontend**: React 18, Vite, React Router v6, Lucide Icons, Vanilla CSS Design System
 - **Database**: PostgreSQL 16
 - **Reverse Proxy**: Nginx (Alpine)
 - **Infrastructure**: Docker & Docker Compose
@@ -53,18 +53,42 @@ docker compose exec backend python manage.py test core.tests.test_booking_concur
    docker compose up --build
    ```
 3. Access the application:
-   - **Frontend / Application Root**: `http://localhost` (or `http://localhost:5173`)
+   - **Frontend / Application Root**: `http://localhost/` (or `http://localhost:5173`)
    - **Backend API Health Check**: `http://localhost/api/health/` (or `http://localhost:8000/api/health/`)
    - **Django Admin**: `http://localhost/admin/`
 
 ---
 
-## 4. API Surface
+## 4. Frontend Application & Navigation
+
+The frontend is a single-page React application configured with client-side routing, centralized JWT token management with automated 401 refresh coordination, and role-aware navigation.
+
+### Frontend Routes
+| Route | Access | Description |
+|---|---|---|
+| `/login` | Public | Google OAuth login + Development login escape hatch |
+| `/sessions` | Authenticated | Session catalog with live availability filters & search |
+| `/sessions/:id` | Authenticated | Session detail, host profile, and live concurrency-safe booking CTA |
+| `/bookings` | Authenticated | User bookings partitioned into Active and Past tabs with cancellation |
+| `/profile` | Authenticated | Profile view/edit and **Creator Mode** toggle switch |
+| `/creator` | Creator Only | Creator dashboard, enrollment metrics, attendee list modal, session actions |
+| `/creator/sessions/new` | Creator Only | Create new session form with client & server validation |
+| `/creator/sessions/:id/edit` | Creator Only | Edit existing session form |
+
+### Frontend Build Verification
+To test the production build of the frontend bundle:
+```bash
+docker compose exec frontend npm run build
+```
+
+---
+
+## 5. API Surface
 
 ### Authentication & Profile
 | Method | Endpoint | Auth Required | Description |
 |---|---|---|---|
-| `POST` | `/api/auth/google/` | No | Exchange Google ID token (or devtoken) → `{ access, refresh, user }` |
+| `POST` | `/api/auth/google/` | No | Exchange Google ID token (or `devtoken:<email>`) → `{ access, refresh, user }` |
 | `POST` | `/api/auth/refresh/` | No | Refresh JWT access token → `{ access }` |
 | `GET` | `/api/me/` | Bearer JWT | Retrieve authenticated user profile |
 | `PATCH` | `/api/me/` | Bearer JWT | Update profile (`name`, `bio`, `avatar_url`, `is_creator`) |
@@ -89,7 +113,7 @@ docker compose exec backend python manage.py test core.tests.test_booking_concur
 
 ---
 
-## 5. Running the Complete Automated Test Suite
+## 6. Running the Complete Automated Test Suite
 
 To run all 48 unit, permission, constraint, and concurrency tests:
 
@@ -99,7 +123,7 @@ docker compose exec backend python manage.py test core.tests -v 2
 
 ---
 
-## 6. Database Persistence Mechanism
+## 7. Database Persistence Mechanism
 
 Database data is persisted using a named Docker volume `ahoum_postgres_data` mapped to `/var/lib/postgresql/data` inside the PostgreSQL container:
 
