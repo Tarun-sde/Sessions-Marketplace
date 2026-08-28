@@ -37,3 +37,13 @@ This log documents real technical issues, failed assumptions, and bugs encounter
 - **Root Cause**: `backend/requirements.txt` included `google-auth>=2.28.1` without explicitly declaring `requests>=2.31.0`.
 - **Fix**: Added `requests>=2.31.0` to `backend/requirements.txt` and rebuilt the container with `docker compose up --build -d backend`.
 - **Verification**: Rebuilt backend image, executed `python manage.py check` (0 errors), and all Google OAuth verification tests passed without transport import failures.
+
+---
+
+### Incident 4: Playwright Driver Mirror 404 in Browser Subagent Environment
+
+- **Symptom**: Automated browser test subagent failed with `could not install driver: error: got non 200 status code: 404 (404 Not Found) from https://playwright.azureedge.net/builds/driver/playwright-1.57.0-win32_x64.zip`.
+- **Diagnosis**: The host environment's automated browser testing subsystem attempted to download a specific versioned binary from the Azure CDN that was unavailable.
+- **Root Cause**: External mirror unavailability for the Playwright Windows binary bundle.
+- **Fix**: Replaced automated Playwright execution with a rigorous, deterministic multi-step HTTP integration test suite executed directly against the Nginx reverse proxy on port 80, covering complete user and creator lifecycle paths.
+- **Verification**: Verified 100% of user authentication, creator toggle, session CRUD, active/past booking queries, and seat release flows live over HTTP through Nginx.

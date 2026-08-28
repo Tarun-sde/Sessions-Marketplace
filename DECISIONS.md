@@ -114,3 +114,15 @@ This document records non-trivial technical and architectural decisions made dur
   2. Show a clean pending spinner on the button, wait for server confirmation, and on 409 conflict, immediately re-fetch the session detail to update remaining seats and display the specific collision error message.
 - **Choice Made**: Option 2. Server-confirmed state transitions with instant conflict-triggered re-sync.
 - **Trade-offs**: Eliminates ghost confirmations and ensures that the user interface never lies about seat acquisition under concurrency.
+
+---
+
+### Decision 11: Creator Role Downgrade Preserves Existing Session Ownership
+
+- **Problem / Ambiguity**: When a user who created sessions subsequently updates their profile to disable Creator Mode (`is_creator = False`), what permissions should they retain over their previously created sessions?
+- **Options Considered**:
+  1. Automatically delete or disown the sessions upon role toggle.
+  2. Revoke update/delete permissions from the owner while leaving the session active.
+  3. Restrict `is_creator=True` only to the creation of *new* sessions (`POST /api/sessions/`), while retaining session object ownership permissions (`session.creator == request.user`) for existing sessions (`PATCH`, `DELETE`, `/bookings/`).
+- **Choice Made**: Option 3. Creation is guarded by `IsCreator`, while lifecycle management is guarded by `IsSessionOwnerOrReadOnly`.
+- **Trade-offs**: Eliminates accidental orphaning or loss of control over active sessions when a creator toggles their status, while preserving role-based creation gating.

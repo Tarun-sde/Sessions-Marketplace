@@ -83,6 +83,28 @@ This log documents AI interactions, model responses, supervision, rejections/mod
 
 ---
 
+### [Phase 5] Edge Cases, Concurrency Hardening & Regression Testing
+
+- **Model / Tool**: Antigravity (Gemini 3.7 Flash) / IDE Pair Programmer
+- **Prompt**: "Implement ONLY Phase 5 — Edge Cases, Concurrency Hardening & Regression Testing. Harden booking edge cases, cancellation edge cases, cancel/re-book race, multi-capacity concurrency (capacity=1, 2, 5), past/active boundary edge cases, session ownership persistence across creator mode toggle, dev-auth security gating, DB constraint regression, frontend build and Docker persistence."
+- **What was used**:
+  - Expanded `BookingConcurrencyTestCase` to prove concurrency safety across capacities 1, 2, and 5 with 10 contending threads each.
+  - Added concurrent cancel-vs-rebook race test proving `active_bookings <= capacity` under mixed cancellation and booking transactions.
+  - Added creator toggle ownership persistence test: user creates session, switches `is_creator=False`, verifies that session ownership and edit/delete permissions are fully preserved while new session creation is blocked.
+  - Added dev-auth security gating tests verifying devtoken rejection when `DEBUG=False` or `AUTH_DEV_MODE=False`.
+  - Added negative and zero capacity DB constraint regression tests (`CheckConstraint(capacity >= 1)`).
+- **What was changed / rejected**:
+  - Rejected modifying the core PostgreSQL locking architecture or replacing `select_for_update()`.
+  - Rejected weakening any concurrency assertion.
+  - Rejected faking browser test results when Playwright driver installation failed; reported limitation honestly while performing comprehensive live HTTP verification.
+- **How it was verified**:
+  - Full backend test suite executed: 58/58 tests passed in 3.46s.
+  - Concurrency test suite executed: 4/4 concurrency scenarios passed in 1.41s.
+  - Frontend build re-verified cleanly: 0 errors in 2.90s.
+  - PostgreSQL persistence verified across `docker compose restart backend`.
+
+---
+
 ### What AI Got Wrong / What Was Corrected
 
 1. **Implicit Dependency Assumption (`requests` package missing from `google-auth`)**:
